@@ -64,20 +64,12 @@ function App() {
           <Route
             exact
             path="/project/:slug"
-            element={
-              <PrivateRoute>
-                <Project />
-              </PrivateRoute>
-            }
+            element={<Project />}
           />
           <Route
             exact
             path="/projects"
-            element={
-              <PrivateRoute>
-                <Projects />
-              </PrivateRoute>
-            }
+            element={<Projects />}
           />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/signup" element={<SignUp />} />

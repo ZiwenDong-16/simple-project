@@ -1,50 +1,65 @@
-import React, { useContext, useEffect, useState } from "react";
-import axios from "axios";
+import React, { useEffect, useState } from "react";
+// import axios from "axios";
 import Navbar from "../components/Navbar";
 import ProjectHeader from "../components/ProjectHeader";
 import Board from "../components/Board";
-import AuthContext from "../context/AuthContext";
+// import AuthContext from "../context/AuthContext";
 import SideBar from "../components/SideBar";
 import notFound from "../static/24.svg";
 import Loading from "../components/Loading";
-import { useParams } from "react-router-dom";
 import ProjectForm from "../components/ProjectForm";
+import { mockProject } from "../static/mockData"; 
 
-const baseURL = process.env.REACT_APP_BACKEND_URL;
+// const baseURL = process.env.REACT_APP_BACKEND_URL;
+const wsURL = process.env.REACT_APP_WS_URL;   
 
 function Project() {
-  const { token, badge } = useContext(AuthContext);
-
   const [sidebar, setSidebar] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [project, setProject] = useState();
+  const [project, setProject] = useState(null);
   const [open, setOpen] = useState(false);
 
-  const { slug } = useParams();
-  const loadProjects = () => {
-    axios
-      .get(`${baseURL}/projects/${slug}`, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + String(token.access),
-        },
-      })
-      .then((response) => {
-        setProject(response.data);
-        setLoading(false);
-      })
-      .catch((response) => {
-        setLoading(false);
-      });
-  };
+   const [ws, setWs] = useState(null);
 
+  // ⭐ 第一个 effect：直接用 mockProject 填充，不再请求后端
   useEffect(() => {
-    loadProjects();
-  }, [slug, badge]);
+    setProject(mockProject);
+    setLoading(false);
+  }, []);
+
+    useEffect(() => {
+    if (!project || !wsURL) return;
+
+    const socket = new WebSocket(wsURL);
+    setWs(socket);                 // ⭐ 用 state 保存
+
+    socket.onopen = () => {
+      console.log("WS connected");
+      socket.send(
+        JSON.stringify({
+          type: "JOIN_PROJECT",
+          project: project.slug,
+        })
+      );
+    };
+
+    socket.onclose = () => {
+      console.log("WS closed");
+    };
+
+    socket.onerror = (err) => {
+      console.error("WS error:", err);
+    };
+
+    return () => {
+      socket.close();
+    };
+  }, [project, wsURL]);
+
 
   return (
     <>
-      {open && (
+      {open && project && (
         <ProjectForm
           close={() => setOpen(false)}
           projectName={project.name}
@@ -69,7 +84,7 @@ function Project() {
           {project ? (
             <>
               <ProjectHeader data={project} open={() => setOpen(true)} />
-              <Board project={project} />
+              <Board project={project} ws={ws} />
             </>
           ) : (
             <div className="grow grid items-center justify-center py-10">
@@ -99,3 +114,4 @@ function Project() {
 }
 
 export default Project;
+

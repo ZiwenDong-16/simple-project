@@ -1,8 +1,7 @@
-import { useEffect, useState, useContext } from "react";
+// src/components/Board.jsx
+import { useEffect, useState } from "react";
 import Lane from "./Lane";
-import useDataFetching from "../hooks/useDataFetching";
-import AuthContext from "../context/AuthContext";
-import axios from "axios";
+import { mockTasks } from "../static/mockData";
 
 const lanes = [
   { id: 1, title: "To Do" },
@@ -11,41 +10,38 @@ const lanes = [
   { id: 4, title: "Done" },
 ];
 
-const baseURL = process.env.REACT_APP_BACKEND_URL;
+function Board({ project, ws }) {
+  // 初始任务：用假数据
+  const [tasks, setTasks] = useState(mockTasks);
 
-function Board({ project }) {
-  const [loading, error, data] = useDataFetching(`tasks/${project.slug}`);
-  const [tasks, setTasks] = useState([]);
-  const { token, badge, setTitle, setMessage, setBadge, setType } =
-    useContext(AuthContext);
+  const loading = false;
+  const error = null;
 
   function onDrop(e, laneId) {
     const id = e.dataTransfer.getData("id");
-    const updatedTasks = tasks.filter((task) => {
-      if (task.id.toString() === id) {
-        task.stage = laneId;
-        axios
-          .put(
-            `${baseURL}/task/${task.id}`,
-            JSON.stringify({ stage: laneId }),
-            {
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: "Bearer " + String(token.access),
-              },
-            }
-          )
-          .then((response) => {})
-          .catch((response) => {
-            setBadge(true);
-            setTitle("Error");
-            setMessage(response.data);
-            setType("warning");
-          });
+    const numericId = Number(id); // 把字符串 id 转成数字，方便和 task.id 比较
+
+    // 本地更新任务所在列
+    const updatedTasks = tasks.map((task) => {
+      if (task.id === numericId) {
+        return { ...task, stage: laneId };
       }
       return task;
     });
+
     setTasks(updatedTasks);
+
+    // 通过 WebSocket 广播这个移动事件
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(
+        JSON.stringify({
+          type: "MOVE_TASK",
+          project: project.slug,
+          taskId: numericId,
+          stage: laneId,
+        })
+      );
+    }
   }
 
   function onDragStart(event, id) {
@@ -56,9 +52,33 @@ function Board({ project }) {
     e.preventDefault();
   }
 
+  // 监听 WebSocket 消息：别的客户端移动任务时更新本地 tasks
   useEffect(() => {
-    setTasks(data);
-  }, [data, badge]);
+    if (!ws) return; // 没连接就不挂监听
+
+    function handleMessage(event) {
+      try {
+        const msg = JSON.parse(event.data);
+        console.log("WS message on client:", msg);
+
+        if (msg.type === "MOVE_TASK" && msg.project === project.slug) {
+          setTasks((prev) =>
+            prev.map((task) =>
+              task.id === msg.taskId ? { ...task, stage: msg.stage } : task
+            )
+          );
+        }
+      } catch (err) {
+        console.error("Failed to parse WS message", err);
+      }
+    }
+
+    ws.addEventListener("message", handleMessage);
+
+    return () => {
+      ws.removeEventListener("message", handleMessage);
+    };
+  }, [ws, project.slug]);
 
   return (
     <div className="grow flex flex-col w-full items-center bg-gray-100 p-5 pb-0 dark:bg-gray-700">
